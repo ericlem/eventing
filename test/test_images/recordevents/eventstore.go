@@ -21,12 +21,9 @@ import (
 	"sync"
 
 	cloudevents "github.com/cloudevents/sdk-go"
-)
 
-type EventInfo struct {
-	ValidationError string
-	EventJSON       []byte
-}
+	"knative.dev/eventing/test/test_images/recordevents/requests"
+)
 
 const evBlockSize = 100
 
@@ -34,7 +31,7 @@ type eventBlock struct {
 	firstIndex      int
 	firstOffsetFree int
 	firstValid      int
-	evInfo          [evBlockSize]EventInfo
+	evInfo          [evBlockSize]requests.EventInfo
 }
 
 type eventStore struct {
@@ -74,7 +71,7 @@ func (es *eventStore) StoreEvent(event cloudevents.Event) {
 
 	evBlock := es.evBlocks[len(es.evBlocks)-1]
 	if evBlock.firstOffsetFree < evBlockSize {
-		evBlock.evInfo[evBlock.firstOffsetFree] = EventInfo{
+		evBlock.evInfo[evBlock.firstOffsetFree] = requests.EventInfo{
 			ValidationError: evErrorString,
 			EventJSON:       evBytes,
 		}
@@ -107,8 +104,8 @@ func (es *eventStore) MinAvail() int {
 	es.evBlocksLock.Unlock()
 	return minAvail
 }
-func (es *eventStore) GetEventInfo(seq int) (EventInfo, error) {
-	var evInfo EventInfo
+func (es *eventStore) GetEventInfo(seq int) (requests.EventInfo, error) {
+	var evInfo requests.EventInfo
 	found := false
 
 	es.evBlocksLock.Lock()

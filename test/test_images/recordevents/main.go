@@ -18,16 +18,92 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
+	"strconv"
+	"strings"
 
 	cloudevents "github.com/cloudevents/sdk-go"
 	"go.uber.org/zap"
 
 	"knative.dev/eventing/pkg/kncloudevents"
 	"knative.dev/eventing/pkg/tracing"
+	"knative.dev/eventing/test/test_images/recordevents/requests"
 )
 
-func handler(event cloudevents.Event) {
+type eventRecorder struct {
+	es *eventStore
+}
+
+func newEventRecorder() *eventRecorder {
+	return &eventRecorder{es: newEventStore()}
+}
+
+func (er *eventRecorder) StartServer(port int) {
+	http.HandleFunc(requests.GetMinMaxPath, er.handleMinMax)
+	http.HandleFunc(requests.GetEntryPath, er.handleGetEntry)
+	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+}
+
+func (er *eventRecorder) handleGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/json")
+	w.WriteHeader(http.StatusOK)
+
+}
+
+func (er *eventRecorder) handleMinMax(w http.ResponseWriter, r *http.Request) {
+	//XXX: fixme, make these atomic
+	minMax := requests.MinMaxResponse{
+		MinAvail: er.es.MinAvail(),
+		MaxSeen:  er.es.MaxSeen(),
+	}
+	respBytes, err := json.Marshal(minMax)
+	if err != nil {
+		panic(fmt.Errorf("Internal error: json marshal shouldn't fail: (%s) (%+v)", err, minMax))
+	}
+
+	w.Header().Set("Content-Type", "text/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBytes)
+}
+
+func (er *eventRecorder) handleGetEntry(w http.ResponseWriter, r *http.Request) {
+	// If we extend this much at all we should vendor a better mux(gorilla, etc)
+	path := strings.TrimLeft(r.URL.Path, "/")
+	getPrefix := strings.TrimLeft(requests.GetEntryPath, "/")
+	suffix := strings.TrimLeft(strings.TrimPrefix(path, getPrefix), "/")
+
+	seqNum, err := strconv.ParseInt(suffix, 10, 32)
+	if err != nil {
+		http.Error(w, "Can't parse event sequence number in request", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := er.es.GetEventInfo(int(seqNum))
+	if err != nil {
+		http.Error(w, "Couldn't find requested event", http.StatusNotFound)
+		return
+	}
+
+	getEntry := requests.GetEntryResponse{
+		Entry: entry,
+	}
+	respBytes, err := json.Marshal(getEntry)
+	if err != nil {
+		panic(fmt.Errorf("Internal error: json marshal shouldn't fail: (%s) (%+v)", err, getEntry))
+	}
+
+	w.Header().Set("Content-Type", "text/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBytes)
+}
+
+func (er *eventRecorder) handler(event cloudevents.Event) {
+	er.es.StoreEvent(event)
+	//XXX: remove
+	log.Printf("Stored event\n")
 	if err := event.Validate(); err == nil {
 		log.Printf("%s", event.Data.([]byte))
 	} else {
@@ -36,6 +112,8 @@ func handler(event cloudevents.Event) {
 }
 
 func main() {
+	er := newEventRecorder()
+
 	logger, _ := zap.NewDevelopment()
 	if err := tracing.SetupStaticPublishing(logger.Sugar(), "", tracing.AlwaysSample); err != nil {
 		log.Fatalf("Unable to setup trace publishing: %v", err)
@@ -45,5 +123,5 @@ func main() {
 		log.Fatalf("failed to create client, %v", err)
 	}
 
-	log.Fatalf("failed to start receiver: %s", c.StartReceiver(context.Background(), handler))
+	log.Fatalf("failed to start receiver: %s", c.StartReceiver(context.Background(), er.handler))
 }
