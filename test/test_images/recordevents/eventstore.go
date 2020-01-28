@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -31,7 +32,7 @@ type eventBlock struct {
 	firstIndex      int
 	firstOffsetFree int
 	firstValid      int
-	evInfo          [evBlockSize]requests.EventInfo
+	evInfoBytes     [evBlockSize][]byte
 }
 
 type eventStore struct {
@@ -58,24 +59,28 @@ func (es *eventStore) checkAppendBlock() {
 	}
 }
 
-func (es *eventStore) StoreEvent(event cloudevents.Event) {
-	var evErrorString string
-	evBytes, evError := event.MarshalJSON()
-	if evError != nil {
-		evErrorString = evError.Error()
-		if evErrorString == "" {
-			evErrorString = "Unknown Error"
+func (es *eventStore) StoreEvent(event cloudevents.Event, httpHeaders map[string][]string) {
+	var evInfo requests.EventInfo
+	evInfo.Event = &event
+	evInfo.HTTPHeaders = httpHeaders
+	evInfoBytes, err := json.Marshal(&evInfo)
+	if err != nil {
+		evInfo.Event = nil
+		evInfo.ValidationError = err.Error()
+		if evInfo.ValidationError == "" {
+			evInfo.ValidationError = "Unknown Error"
+		}
+		evInfoBytes, err = json.Marshal(&evInfo)
+		if err != nil {
+			panic(fmt.Errorf("Unexpected marshal error (%s) (%+v)", err, evInfo))
 		}
 	}
+
 	es.evBlocksLock.Lock()
 
 	evBlock := es.evBlocks[len(es.evBlocks)-1]
 	if evBlock.firstOffsetFree < evBlockSize {
-		evBlock.evInfo[evBlock.firstOffsetFree] = requests.EventInfo{
-			ValidationError: evErrorString,
-			EventJSON:       evBytes,
-		}
-
+		evBlock.evInfoBytes[evBlock.firstOffsetFree] = evInfoBytes
 		evBlock.firstOffsetFree++
 	}
 
@@ -104,8 +109,8 @@ func (es *eventStore) MinAvail() int {
 	es.evBlocksLock.Unlock()
 	return minAvail
 }
-func (es *eventStore) GetEventInfo(seq int) (requests.EventInfo, error) {
-	var evInfo requests.EventInfo
+func (es *eventStore) GetEventInfoBytes(seq int) ([]byte, error) {
+	var evInfoBytes []byte
 	found := false
 
 	es.evBlocksLock.Lock()
@@ -115,13 +120,13 @@ func (es *eventStore) GetEventInfo(seq int) (requests.EventInfo, error) {
 		}
 		if seq < block.firstIndex+block.firstOffsetFree {
 			found = true
-			evInfo = block.evInfo[seq-block.firstIndex]
+			evInfoBytes = block.evInfoBytes[seq-block.firstIndex]
 			break
 		}
 	}
 	es.evBlocksLock.Unlock()
 	if !found {
-		return evInfo, fmt.Errorf("Invalid sequence number %d", seq)
+		return evInfoBytes, fmt.Errorf("Invalid sequence number %d", seq)
 	}
-	return evInfo, nil
+	return evInfoBytes, nil
 }

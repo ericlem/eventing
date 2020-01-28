@@ -81,27 +81,23 @@ func (er *eventRecorder) handleGetEntry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	entry, err := er.es.GetEventInfo(int(seqNum))
+	entryBytes, err := er.es.GetEventInfoBytes(int(seqNum))
 	if err != nil {
 		http.Error(w, "Couldn't find requested event", http.StatusNotFound)
 		return
 	}
 
-	getEntry := requests.GetEntryResponse{
-		Entry: entry,
-	}
-	respBytes, err := json.Marshal(getEntry)
-	if err != nil {
-		panic(fmt.Errorf("Internal error: json marshal shouldn't fail: (%s) (%+v)", err, getEntry))
-	}
-
 	w.Header().Set("Content-Type", "text/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(respBytes)
+	w.Write(entryBytes)
 }
 
-func (er *eventRecorder) handler(event cloudevents.Event) {
-	er.es.StoreEvent(event)
+func (er *eventRecorder) handler(ctx context.Context, event cloudevents.Event) {
+	cloudevents.HTTPTransportContextFrom(ctx)
+
+	tx := cloudevents.HTTPTransportContextFrom(ctx)
+
+	er.es.StoreEvent(event, map[string][]string(tx.Header))
 	//XXX: remove
 	log.Printf("Stored event\n")
 	if err := event.Validate(); err == nil {

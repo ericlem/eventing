@@ -16,10 +16,13 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
 	cloudevents "github.com/cloudevents/sdk-go"
+
+	"knative.dev/eventing/test/test_images/recordevents/requests"
 )
 
 // Test that adding and getting a bunch of events stores them all
@@ -33,7 +36,7 @@ func TestAddGetMany(t *testing.T) {
 		ce.SetType("knative.dev.test.event.a")
 		ce.SetSource("https://source.test.event.knative.dev/foo")
 		ce.SetID(strconv.FormatInt(int64(i), 10))
-		es.StoreEvent(ce)
+		es.StoreEvent(ce, nil)
 		minAvail := es.MinAvail()
 		maxSeen := es.MaxSeen()
 		if minAvail != 1 {
@@ -45,35 +48,40 @@ func TestAddGetMany(t *testing.T) {
 
 	}
 	for i := 1; i <= count; i++ {
-		evInfo, err := es.GetEventInfo(i)
+		evInfoBytes, err := es.GetEventInfoBytes(i)
 		if err != nil {
 			t.Fatalf("Error calling get on item %d (range 1-%d): %s", i, count, err)
 		}
-		if len(evInfo.EventJSON) == 0 {
+		if len(evInfoBytes) == 0 {
+			t.Fatalf("Empty info bytes")
+		}
+
+		var evInfo requests.EventInfo
+		err = json.Unmarshal(evInfoBytes, &evInfo)
+		if err != nil {
+			t.Fatalf("Error unmarshalling stored JSON: %s", err)
+		}
+
+		if evInfo.Event == nil {
 			t.Fatalf("Unexpected empty event info event %d: %+v", i, evInfo)
 		}
 		if len(evInfo.ValidationError) != 0 {
 			t.Fatalf("Unexpected error for stored event %d: %s", i, evInfo.ValidationError)
 		}
 
-		e := cloudevents.Event{}
-		err = e.UnmarshalJSON(evInfo.EventJSON)
-		if err != nil {
-			t.Fatalf("Error unmarshalling stored JSON: %s", err)
-		}
 		// Make sure it's the expected event
-		seenID := e.ID()
+		seenID := evInfo.Event.ID()
 		expectedID := strconv.FormatInt(int64(i-1), 10)
 		if seenID != expectedID {
 			t.Errorf("Incorrect id on retrieval: %s, expected %s", seenID, expectedID)
 		}
 	}
-	_, err := es.GetEventInfo(count + 1)
+	_, err := es.GetEventInfoBytes(count + 1)
 	if err == nil {
 		t.Errorf("Unexpected non-error return for getinfo of %d", count+1)
 	}
 
-	_, err = es.GetEventInfo(0)
+	_, err = es.GetEventInfoBytes(0)
 	if err == nil {
 		t.Errorf("Unexpected non-error return for getinfo of %d", 0)
 	}
@@ -92,7 +100,7 @@ func TestEmpty(t *testing.T) {
 	}
 
 	for i := -2; i < 2; i++ {
-		_, err := es.GetEventInfo(0)
+		_, err := es.GetEventInfoBytes(0)
 		if err == nil {
 			t.Errorf("Unexpected non-error return for getinfo of %d", i)
 		}
@@ -106,43 +114,53 @@ func TestAddGetSingleValid(t *testing.T) {
 	expectedID := "111"
 	es := newEventStore()
 
+	headers := make(map[string][]string)
+	headers["foo"] = []string{"bar", "baz"}
 	ce := cloudevents.NewEvent(cloudevents.VersionV1)
 	ce.SetType(expectedType)
 	ce.SetSource(expectedSource)
 	ce.SetID(expectedID)
-	es.StoreEvent(ce)
+	es.StoreEvent(ce, headers)
 	minAvail := es.MinAvail()
 	maxSeen := es.MaxSeen()
 	if minAvail != maxSeen {
 		t.Fatalf("Expected match, saw %d, %d", minAvail, maxSeen)
 	}
 
-	evInfo, err := es.GetEventInfo(minAvail)
+	evInfoBytes, err := es.GetEventInfoBytes(minAvail)
 	if err != nil {
 		t.Fatalf("Error calling get: %s", err)
 	}
-	if len(evInfo.EventJSON) == 0 {
+	var evInfo requests.EventInfo
+	err = json.Unmarshal(evInfoBytes, &evInfo)
+	if err != nil {
+		t.Fatalf("Error unmarshalling stored JSON: %s", err)
+	}
+
+	if evInfo.Event == nil {
 		t.Fatalf("Unexpected empty event info event: %+v", evInfo)
 	}
 	if len(evInfo.ValidationError) != 0 {
 		t.Fatalf("Unexpected error for stored event: %s", evInfo.ValidationError)
 	}
-
-	e := cloudevents.Event{}
-	err = e.UnmarshalJSON(evInfo.EventJSON)
-	if err != nil {
-		t.Fatalf("Error unmarshalling stored JSON: %s", err)
+	if len(evInfo.HTTPHeaders) != 1 {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
 	}
-
-	seenID := e.ID()
+	if len(evInfo.HTTPHeaders["foo"]) != 2 {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
+	}
+	if evInfo.HTTPHeaders["foo"][0] != "bar" || evInfo.HTTPHeaders["foo"][1] != "baz" {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
+	}
+	seenID := evInfo.Event.ID()
 	if seenID != expectedID {
 		t.Errorf("Incorrect id on retrieval: %s, expected %s", seenID, expectedID)
 	}
-	seenSource := e.Source()
+	seenSource := evInfo.Event.Source()
 	if seenSource != expectedSource {
 		t.Errorf("Incorrect source on retrieval: %s, expected %s", seenSource, expectedSource)
 	}
-	seenType := e.Type()
+	seenType := evInfo.Event.Type()
 	if seenType != expectedType {
 		t.Errorf("Incorrect type on retrieval: %s, expected %s", seenType, expectedType)
 	}
@@ -151,25 +169,41 @@ func TestAddGetSingleValid(t *testing.T) {
 func TestAddGetSingleInvalid(t *testing.T) {
 	es := newEventStore()
 
+	headers := make(map[string][]string)
+	headers["foo"] = []string{"bar", "baz"}
 	ce := cloudevents.NewEvent(cloudevents.VersionV1)
 	ce.SetType("knative.dev.test.event.a")
 	// No source
 	ce.SetID("111")
-	es.StoreEvent(ce)
+	es.StoreEvent(ce, headers)
 	minAvail := es.MinAvail()
 	maxSeen := es.MaxSeen()
 	if minAvail != maxSeen {
 		t.Fatalf("Expected match, saw %d, %d", minAvail, maxSeen)
 	}
 
-	evInfo, err := es.GetEventInfo(minAvail)
+	evInfoBytes, err := es.GetEventInfoBytes(minAvail)
 	if err != nil {
 		t.Fatalf("Error calling get: %s", err)
 	}
-	if len(evInfo.EventJSON) != 0 {
+	var evInfo requests.EventInfo
+	err = json.Unmarshal(evInfoBytes, &evInfo)
+	if err != nil {
+		t.Fatalf("Error unmarshalling stored JSON: %s", err)
+	}
+	if evInfo.Event != nil {
 		t.Fatalf("Unexpected event info: %+v", evInfo)
 	}
 	if len(evInfo.ValidationError) == 0 {
 		t.Fatalf("Unexpected empty error for stored event: %s", evInfo.ValidationError)
+	}
+	if len(evInfo.HTTPHeaders) != 1 {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
+	}
+	if len(evInfo.HTTPHeaders["foo"]) != 2 {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
+	}
+	if evInfo.HTTPHeaders["foo"][0] != "bar" || evInfo.HTTPHeaders["foo"][1] != "baz" {
+		t.Fatalf("Unexpected header contents for stored event: %+v", evInfo.HTTPHeaders)
 	}
 }

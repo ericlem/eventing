@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+
+	cloudevents "github.com/cloudevents/sdk-go"
 )
 
 type MinMaxResponse struct {
@@ -28,13 +30,10 @@ type MinMaxResponse struct {
 	MaxSeen  int
 }
 
-type GetEntryResponse struct {
-	Entry EventInfo
-}
-
 type EventInfo struct {
 	ValidationError string
-	EventJSON       []byte
+	Event           *cloudevents.Event
+	HTTPHeaders     map[string][]string
 }
 
 const GetMinMaxPath = "/minmax"
@@ -78,14 +77,14 @@ func GetEntry(host string, port int, seqno int) (EventInfo, error) {
 	if resp.StatusCode != 200 {
 		return EventInfo{}, fmt.Errorf("Error %d reading response", resp.StatusCode)
 	}
-	entryResponse := GetEntryResponse{}
+	entryResponse := EventInfo{}
 	err = json.Unmarshal(bodyContents, &entryResponse)
 	if err != nil {
 		return EventInfo{}, fmt.Errorf("Error unmarshalling response %w", err)
 	}
-	if len(entryResponse.Entry.ValidationError) == 0 && len(entryResponse.Entry.EventJSON) == 0 {
+	if len(entryResponse.ValidationError) == 0 && entryResponse.Event == nil {
 		return EventInfo{}, fmt.Errorf("Invalid decoded json: %+v", entryResponse)
 	}
 
-	return entryResponse.Entry, nil
+	return entryResponse, nil
 }
