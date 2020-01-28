@@ -109,6 +109,7 @@ func (er *eventRecorder) handler(ctx context.Context, event cloudevents.Event) {
 
 func main() {
 	er := newEventRecorder()
+	er.StartServer(8081)
 
 	logger, _ := zap.NewDevelopment()
 	if err := tracing.SetupStaticPublishing(logger.Sugar(), "", tracing.AlwaysSample); err != nil {
