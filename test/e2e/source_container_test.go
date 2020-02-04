@@ -18,6 +18,7 @@ limitations under the License.
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -135,10 +136,10 @@ func TestContainerSource(t *testing.T) {
 							fmt.Printf("XXXEML: error in DataBytes %s", err)
 							continue
 						}
-						var bodyDecode map[string]string
+						var bodyDecode map[string]interface{}
 						err = json.Unmarshal(db, &bodyDecode)
 						if err != nil {
-							fmt.Printf("XXXEMLM: error decoding body %d %+v", i, req)
+							fmt.Printf("XXXEMLM: error decoding body %d %s", i, string(db))
 							continue
 						}
 						if bodyDecode["msg"] == data {
@@ -156,7 +157,7 @@ func TestContainerSource(t *testing.T) {
 			fmt.Printf("XXXEML: Saw count of %d", matching)
 			break
 		}
-		if time.Now().Sub(start) > 20*time.Minute {
+		if time.Now().Sub(start) > 4*time.Minute {
 			t.Fatalf("Timed out waiting for events")
 		}
 		time.Sleep(5 * time.Second)
