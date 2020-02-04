@@ -135,10 +135,16 @@ func TestContainerSource(t *testing.T) {
 							fmt.Printf("XXXEML: error in DataBytes %s", err)
 							continue
 						}
-						if string(db) == data {
+						var bodyDecode map[string]string
+						err = json.Unmarshal(db, &bodyDecode)
+						if err != nil {
+							fmt.Printf("XXXEMLM: error decoding body %d %+v", i, req)
+							continue
+						}
+						if bodyDecode["msg"] == data {
 							matching++
 						}
-						fmt.Printf("XXXEMLM: Match: %d %v (%s) (%s)", i, string(db) == data, string(db), data)
+						fmt.Printf("XXXEMLM: Match: %d %v (%s) (%s)", i, bodyDecode["msg"] == data, bodyDecode["msg"], data)
 					} else {
 						fmt.Printf("XXXEMLM: Null event: %d %+v", i, req)
 					}
