@@ -121,7 +121,7 @@ func TestContainerSource(t *testing.T) {
 		}
 		count++
 		matching := 0
-		if err1 != nil {
+		if err1 == nil {
 			if min != -1 {
 				for i := min; i <= max; i++ {
 					req, err := requests.GetEntry("localhost", 8081, i)
