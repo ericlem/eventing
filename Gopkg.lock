@@ -953,7 +953,7 @@
   version = "kubernetes-1.16.4"
 
 [[projects]]
-  digest = "1:9851a3756a37a7ccd76f8b50050e84be09e3cdccdf8ccf23ef4f00f0b6c4772a"
+  digest = "1:19760966a0430862086484a297f9a2c1735a5636e801dc5060f6b538ad7f7772"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -985,6 +985,7 @@
     "pkg/util/diff",
     "pkg/util/errors",
     "pkg/util/framer",
+    "pkg/util/httpstream",
     "pkg/util/intstr",
     "pkg/util/json",
     "pkg/util/mergepatch",
@@ -1018,7 +1019,7 @@
   revision = "b2ee5b48f68d503cf4c09f34343d59c1345a8bb0"
 
 [[projects]]
-  digest = "1:6026cb42da6cd87a75ef73bea6e7e0acf296975e80cab51703d134909a23e9fa"
+  digest = "1:38ff9811b3fcb0a12bb10c0d30b738e444754ad5122cc841dedf9c4dd2541634"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -1211,6 +1212,7 @@
     "tools/clientcmd/api/v1",
     "tools/metrics",
     "tools/pager",
+    "tools/portforward",
     "tools/record",
     "tools/record/util",
     "tools/reference",
@@ -1515,6 +1517,7 @@
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/tools/clientcmd",
+    "k8s.io/client-go/tools/portforward",
     "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/code-generator/cmd/client-gen",

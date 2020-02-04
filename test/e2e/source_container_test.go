@@ -20,10 +20,12 @@ package e2e
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	//"k8s.io/client-go/tools/portforward"
 
 	duckv1beta1 "knative.dev/pkg/apis/duck/v1beta1"
 	pkgTest "knative.dev/pkg/test"
@@ -104,15 +106,54 @@ func TestContainerSource(t *testing.T) {
 	}
 	defer resources.Cleanup(port)
 
-	min, max, err1 := requests.GetMinMax("localhost", 8081)
-	fmt.Printf("XXXEML1a: min %d max %d: %s\n", min, max, err1)
-
 	// verify the logger service receives the event
 	expectedCount := 2
-	if err := client.CheckLog(loggerPodName, lib.CheckerContainsAtLeast(data, expectedCount)); err != nil {
-		t.Fatalf("String %q does not appear at least %d times in logs of logger pod %q: %v", data, expectedCount, loggerPodName, err)
+	//if err := client.CheckLog(loggerPodName, lib.CheckerContainsAtLeast(data, expectedCount)); err != nil {
+	//	t.Fatalf("String %q does not appear at least %d times in logs of logger pod %q: %v", data, expectedCount, loggerPodName, err)
+	//}
+
+	start := time.Now()
+	count := 0
+	for {
+		min, max, err1 := requests.GetMinMax("localhost", 8081)
+		if err1 != nil {
+			fmt.Printf("XXXEML1a: count %d min %d max %d: %s\n", count, min, max, err1)
+		}
+		count++
+		matching := 0
+		if err1 != nil {
+			if min != -1 {
+				for i := min; i <= max; i++ {
+					req, err := requests.GetEntry("localhost", 8081, i)
+					if err != nil {
+						fmt.Printf("XXXEML: error in GetEntry %s", err)
+						continue
+					}
+					if req.Event != nil {
+						db, err := req.Event.DataBytes()
+						if err != nil {
+							fmt.Printf("XXXEML: error in DataBytes %s", err)
+							continue
+						}
+						if string(db) == data {
+							matching++
+						}
+						fmt.Printf("XXXEMLM: Match: %d %v (%s) (%s)", i, string(db) == data, string(db), data)
+					} else {
+						fmt.Printf("XXXEMLM: Null event: %d %+v", i, req)
+					}
+				}
+			}
+		}
+		fmt.Printf("XXXEML1c: count %d min %d max %d: (%d,%d) \n", count, min, max, matching, expectedCount)
+		if matching >= expectedCount {
+			fmt.Printf("XXXEML: Saw count of %d", matching)
+			break
+		}
+		if time.Now().Sub(start) > 20*time.Minute {
+			t.Fatalf("Timed out waiting for events")
+		}
+		time.Sleep(5 * time.Second)
 	}
 
-	min, max, err1 = requests.GetMinMax("localhost", 8081)
-	fmt.Printf("XXXEML2b: min %d max %d: %s\n", min, max, err1)
 }
