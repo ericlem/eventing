@@ -30,10 +30,15 @@ import (
 
 	"knative.dev/eventing/test/lib"
 	"knative.dev/eventing/test/lib/resources"
+	"knative.dev/eventing/test/test_images/recordevents/requests"
 
 	sourcesv1alpha1 "knative.dev/eventing/pkg/apis/legacysources/v1alpha1"
 	eventingtesting "knative.dev/eventing/pkg/reconciler/testing"
 )
+
+func printfn(str string, ints ...interface{}) {
+	fmt.Printf(fmt.Sprintf("XXXEML3:%s", str), ints...)
+}
 
 func TestContainerSource(t *testing.T) {
 	const (
@@ -49,7 +54,8 @@ func TestContainerSource(t *testing.T) {
 	defer tearDown(client)
 
 	// create event logger pod and service
-	loggerPod := resources.EventLoggerPod(loggerPodName)
+	loggerPod := resources.EventRecordPod(loggerPodName)
+	//loggerPod := resources.EventLoggerPod(loggerPodName)
 	client.CreatePodOrFail(loggerPod, lib.WithService(loggerPodName))
 
 	// create container source
@@ -92,9 +98,21 @@ func TestContainerSource(t *testing.T) {
 		t.Fatalf("Failed to get all test resources ready: %v", err)
 	}
 
+	port, err := resources.PortForward(printfn, loggerPodName, 8081, 8081, client.Namespace)
+	if err != nil {
+		t.Fatalf("Error forwarding port")
+	}
+	defer resources.Cleanup(port)
+
+	min, max, err1 := requests.GetMinMax("localhost", 8081)
+	fmt.Printf("XXXEML1a: min %d max %d: %s\n", min, max, err1)
+
 	// verify the logger service receives the event
 	expectedCount := 2
 	if err := client.CheckLog(loggerPodName, lib.CheckerContainsAtLeast(data, expectedCount)); err != nil {
 		t.Fatalf("String %q does not appear at least %d times in logs of logger pod %q: %v", data, expectedCount, loggerPodName, err)
 	}
+
+	min, max, err1 = requests.GetMinMax("localhost", 8081)
+	fmt.Printf("XXXEML2b: min %d max %d: %s\n", min, max, err1)
 }

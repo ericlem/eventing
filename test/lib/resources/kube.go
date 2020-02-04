@@ -21,6 +21,10 @@ package resources
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -30,6 +34,7 @@ import (
 	pkgTest "knative.dev/pkg/test"
 
 	"knative.dev/eventing/test/lib/cloudevents"
+	"knative.dev/pkg/test/logging"
 )
 
 // PodOption enables further configuration of a Pod.
@@ -124,6 +129,37 @@ func eventLoggerPod(imageName string, name string) *corev1.Pod {
 			RestartPolicy: corev1.RestartPolicyAlways,
 		},
 	}
+}
+
+// Cleanup will clean the background process used for port forwarding
+func Cleanup(pid int) error {
+	ps := os.Process{Pid: pid}
+	return ps.Kill()
+}
+
+// PortForward sets up local port forward to the pod specified by the "app" label in the given namespace
+func PortForward(logf logging.FormatLogger, podName string, localPort, remotePort int, namespace string) (int, error) {
+	portFwdCmd := fmt.Sprintf("kubectl port-forward %s %d:%d -n %s", podName, localPort, remotePort, namespace)
+	portFwdProcess, err := executeCmdBackground(logf, portFwdCmd)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to port forward: %v", err)
+	}
+	time.Sleep(10 * time.Second)
+	logf("running (%s) (%d) (%d) port-forward in background, pid = %d", podName, localPort, remotePort, portFwdProcess.Pid)
+	return portFwdProcess.Pid, nil
+}
+
+// RunBackground starts a background process and returns the Process if succeed
+func executeCmdBackground(logf logging.FormatLogger, format string, args ...interface{}) (*os.Process, error) {
+	cmd := fmt.Sprintf(format, args...)
+	logf("Executing command: %s", cmd)
+	parts := strings.Split(cmd, " ")
+	c := exec.Command(parts[0], parts[1:]...) // #nosec
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("%s command failed: %v", cmd, err)
+	}
+	return c.Process, nil
 }
 
 // EventTransformationPod creates a Pod that transforms events received.

@@ -42,7 +42,7 @@ const GetEntryPath = "/entry/"
 func GetMinMax(host string, port int) (minRet int, maxRet int, errRet error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s:%d%s", host, port, GetMinMaxPath))
 	if err != nil {
-		return -1, -1, err
+		return -1, -1, fmt.Errorf("http get error: %s", err)
 	}
 	defer resp.Body.Close()
 	bodyContents, err := ioutil.ReadAll(resp.Body)
@@ -67,7 +67,7 @@ func GetMinMax(host string, port int) (minRet int, maxRet int, errRet error) {
 func GetEntry(host string, port int, seqno int) (EventInfo, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s:%d%s/%d", host, port, GetEntryPath, seqno))
 	if err != nil {
-		return EventInfo{}, err
+		return EventInfo{}, fmt.Errorf("http get err %s", err)
 	}
 	defer resp.Body.Close()
 	bodyContents, err := ioutil.ReadAll(resp.Body)

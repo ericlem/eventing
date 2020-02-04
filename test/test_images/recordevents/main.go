@@ -42,9 +42,13 @@ func newEventRecorder() *eventRecorder {
 }
 
 func (er *eventRecorder) StartServer(port int) {
+	fmt.Printf("In Start 1\n")
 	http.HandleFunc(requests.GetMinMaxPath, er.handleMinMax)
+	fmt.Printf("In Start 2\n")
 	http.HandleFunc(requests.GetEntryPath, er.handleGetEntry)
-	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	fmt.Printf("In Start 3\n")
+	go http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	fmt.Printf("In Start 4\n")
 }
 
 func (er *eventRecorder) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +58,14 @@ func (er *eventRecorder) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (er *eventRecorder) handleMinMax(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("In handle min max\n")
 	//XXX: fixme, make these atomic
 	minMax := requests.MinMaxResponse{
 		MinAvail: er.es.MinAvail(),
 		MaxSeen:  er.es.MaxSeen(),
 	}
 	respBytes, err := json.Marshal(minMax)
+	fmt.Printf("In handle min max2:%s\n", err)
 	if err != nil {
 		panic(fmt.Errorf("Internal error: json marshal shouldn't fail: (%s) (%+v)", err, minMax))
 	}
@@ -108,13 +114,17 @@ func (er *eventRecorder) handler(ctx context.Context, event cloudevents.Event) {
 }
 
 func main() {
+	log.Printf("Starting recorder\n")
 	er := newEventRecorder()
+	log.Printf("Starting recorder2\n")
 	er.StartServer(8081)
+	log.Printf("Recorder started\n")
 
 	logger, _ := zap.NewDevelopment()
 	if err := tracing.SetupStaticPublishing(logger.Sugar(), "", tracing.AlwaysSample); err != nil {
 		log.Fatalf("Unable to setup trace publishing: %v", err)
 	}
+	log.Printf("Zap publishing stated started\n")
 	c, err := kncloudevents.NewDefaultClient()
 	if err != nil {
 		log.Fatalf("failed to create client, %v", err)
