@@ -18,11 +18,12 @@ limitations under the License.
 package e2e
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	cloudevents "github.com/cloudevents/sdk-go"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -101,66 +102,23 @@ func TestContainerSource(t *testing.T) {
 		t.Fatalf("Failed to get all test resources ready: %v", err)
 	}
 
-	port, err := resources.PortForward(printfn, loggerPodName, 8081, 8081, client.Namespace)
-	if err != nil {
-		t.Fatalf("Error forwarding port")
-	}
-	defer resources.Cleanup(port)
-
 	// verify the logger service receives the event
 	expectedCount := 2
-	//if err := client.CheckLog(loggerPodName, lib.CheckerContainsAtLeast(data, expectedCount)); err != nil {
-	//	t.Fatalf("String %q does not appear at least %d times in logs of logger pod %q: %v", data, expectedCount, loggerPodName, err)
-	//}
 
-	start := time.Now()
-	count := 0
-	for {
-		min, max, err1 := requests.GetMinMax("localhost", 8081)
-		if err1 != nil {
-			fmt.Printf("XXXEML1a: count %d min %d max %d: %s\n", count, min, max, err1)
+	matchFunc := func(ev *cloudevents.Event) bool {
+		if ev.Source != "dev.knative.eventing.samples.heartbeat" {
+			return false
 		}
-		count++
-		matching := 0
-		if err1 == nil {
-			if min != -1 {
-				for i := min; i <= max; i++ {
-					req, err := requests.GetEntry("localhost", 8081, i)
-					if err != nil {
-						fmt.Printf("XXXEML: error in GetEntry %s", err)
-						continue
-					}
-					if req.Event != nil {
-						db, err := req.Event.DataBytes()
-						if err != nil {
-							fmt.Printf("XXXEML: error in DataBytes %s", err)
-							continue
-						}
-						var bodyDecode map[string]interface{}
-						err = json.Unmarshal(db, &bodyDecode)
-						if err != nil {
-							fmt.Printf("XXXEMLM: error decoding body %d %s", i, string(db))
-							continue
-						}
-						if bodyDecode["msg"] == data {
-							matching++
-						}
-						fmt.Printf("XXXEMLM: Match: %d %v (%s) (%s)", i, bodyDecode["msg"] == data, bodyDecode["msg"], data)
-					} else {
-						fmt.Printf("XXXEMLM: Null event: %d %+v", i, req)
-					}
-				}
-			}
-		}
-		fmt.Printf("XXXEML1c: count %d min %d max %d: (%d,%d) \n", count, min, max, matching, expectedCount)
-		if matching >= expectedCount {
-			fmt.Printf("XXXEML: Saw count of %d", matching)
-			break
-		}
-		if time.Now().Sub(start) > 4*time.Minute {
-			t.Fatalf("Timed out waiting for events")
-		}
-		time.Sleep(5 * time.Second)
+		db, _ := ev.DataBytes()
+		return strings.Contains(string(db), data)
 	}
 
+	targetTracker, err := requests.NewEventInfoStore(loggerPodName, client.Namespace, 8081, 4*time.Minute)
+	if err != nil {
+		t.Fatalf("pod tracker failed: %s", err)
+	}
+	defer targetTracker.Cleanup()
+	if _, err := targetTracker.AtLeastNMatch(requests.ValidEvFunc(matchFunc), expectedCount, 4*time.Minute); err != nil {
+		t.Fatalf("expected messages not found: %s", err)
+	}
 }
